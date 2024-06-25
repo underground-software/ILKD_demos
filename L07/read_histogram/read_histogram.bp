@@ -1,0 +1,13 @@
+#!/bin/bpftrace
+
+//Pass pid as the first argument
+
+BEGIN {
+	printf("Tracing bytes read by pid %d\n", $1);
+}
+
+tracepoint:syscalls:sys_exit_read /pid == $1/
+{
+	@bytes = hist(args.ret);
+}
+

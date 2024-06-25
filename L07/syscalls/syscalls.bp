@@ -1,0 +1,7 @@
+#!/bin/bpftrace
+
+//count syscalls by process
+
+tracepoint:raw_syscalls:sys_enter {
+	@[comm] = count();
+}

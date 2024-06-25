@@ -1,0 +1,9 @@
+#!/bin/bpftrace
+
+kretprobe:do_nanosleep {
+	printf("PID %d (%s) woke up and returned: %d\n", pid, comm, retval);
+}
+
+END {
+	printf("Goodbye!\n");
+}

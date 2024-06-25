@@ -1,0 +1,5 @@
+#!/bin/bpftrace
+
+uprobe:/bin/bash:readline {
+	printf("%s %d %s\n", comm, arg0, str(arg0));
+}

@@ -1,0 +1,9 @@
+#!/bin/bpftrace
+
+BEGIN {
+	printf("Hello!\n");
+}
+
+kprobe:do_nanosleep {
+	printf("PID %d (%s) sleeping...\n", pid, comm);
+}

@@ -1,0 +1,4 @@
+[name] [hamburgers] [hotdogs]
+alice 300 2
+bob 400 3
+charlie 500 4
