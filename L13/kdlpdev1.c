@@ -13,6 +13,7 @@ dev_t major_minor;
 int kdlpdev_open(struct inode * inode, struct file * filep) {
 
 	unsigned long bytes;
+
 	get_random_bytes(&bytes, sizeof(bytes));
 
 	pr_info("open %d:%d and assign %lu\n", imajor(inode), iminor(inode), bytes % 256);
@@ -28,45 +29,10 @@ int kdlpdev_close(struct inode * inode, struct file * file) {
 	return 0;
 }
 
-ssize_t kdlpdev_read(struct file * filep, char * __user buf, size_t count, loff_t * fpos) {
-	pr_info("read %d:%d\n", imajor(filep->f_inode), iminor(filep->f_inode));
-
-	char _buf[64];
-	size_t buflen = sprintf(_buf, "kdlpdev's random number is %lu\n", (unsigned)filep->private_data % 256);
-	if (buflen < 0) {
-		pr_err("Unable to write to _buf\n");
-		return -ENOMEM;
-	}
-
-	if (*fpos >= buflen)
-		return 0;
-
-	if (count > buflen - *fpos)
-		count = buflen - *fpos;
-
-	size_t bytes_not_written = copy_to_user(buf, _buf + *fpos, count);
-	if (bytes_not_written > 0)
-		return -EFAULT;
-
-	*fpos += buflen;
-
-	pr_info("read %d bytes\n", count);
-
-	return count;
-}
-
-ssize_t kdlpdev_write(struct file * filep, const char * __user buf, size_t count, loff_t * fpos) {
-	pr_info("write %d:%d\n", imajor(filep->f_inode), iminor(filep->f_inode));
-
-	return -ENOTRECOVERABLE;
-}
-
 struct file_operations kdlp_fops = {
 	.owner = THIS_MODULE,
 	.open = kdlpdev_open,
 	.release = kdlpdev_close,
-	.read = kdlpdev_read,
-	.write = kdlpdev_write,
 };
 
 int __init kdlpdev_init(void) {
