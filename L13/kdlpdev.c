@@ -22,7 +22,7 @@ int kdlpdev_open(struct inode * inode, struct file * filep) {
 	return 0;
 }
 
-int kdlpdev_close(struct inode * inode, struct file * file) {
+int kdlpdev_close(struct inode * inode, struct file * filep) {
 	pr_info("close %d:%d\n", imajor(inode), iminor(inode));
 
 	return 0;
@@ -48,7 +48,7 @@ ssize_t kdlpdev_read(struct file * filep, char * __user buf, size_t count, loff_
 	if (bytes_not_written > 0)
 		return -EFAULT;
 
-	*fpos += buflen;
+	*fpos += count;
 
 	pr_info("read %d bytes\n", count);
 
