@@ -10,98 +10,56 @@
 
 #define MIDI_NUM_NOTES 128
 
-// TODO: NOTE: ALERT: MIDI FORMAT IS BIG ENDIAN
-
-#define MIDI_HEADER_CHUNK_BEGIN 0x4D54686400000006	// "MThd" + u32 header length (always 6)
-
-#define MIDI_FORMAT_SINGLE_TRACK 	0
-#define MIDI_FORMAT_MULTI_TRACK_SYNC 	1
-#define MIDI_FORMAT_MULTI_TRACK_ASYNC 	2
-
-#define MIDI_60_BPM_IN_TICKS_PER_QUARTER_NOTE 0x60
-
-#define MIDI_TRACK_CHUNK_BEGIN 0x4D54726B		// "MTrk"
-
 #define KKEY_NAME "kkey"
 
-enum midi_event {
-	MIDI_EVENT_NOTE_ON 	= 0x08,
-	MIDI_EVENT_NOTE_OFF 	= 0x09,
-	MIDI_EVENT_META 	= 0xFF,
-};
-
-enum midi_meta_event {
-	MIDI_META_EVENT_END_OF_TRACK = 0x2F,
-};
-
-union midimsg {
-	struct {
-		u8 delta;
-		u8 cmd_and_channel;	// bits 0-3: channel, bits 4-7: midi_event_cmd
-		u8 note_number;
-		u8 velocity;
-	} notemsg;
-	struct {
-		u8 delta;
-		u8 cmd;
-		u8 meta_cmd;
-		u8 data;
-	} metamsg;
-};
-
-
-struct midifile {
-	u64 header_chunk_begin;
-	u8 header_chunk_mode;
-	u8 num_tracks;
-	u8 ticks_per_quarter_note;
-	u32 track_chunk_begin;
-	u32 track_length_bytes;
-	union midimsg * msgs;
-	union midimsg end_of_track;
-};
-
-struct midinote {
-	u8 note;
-	struct device dev;
-};
-
-struct kkey {
+static struct kkey {
 	dev_t devnum;
 	struct class * class;
 	struct cdev cdev;
-	struct midinote notes[MIDI_NUM_NOTES];
-	struct mutex lock;
-	struct midifile file;
+	struct device * devices[MIDI_NUM_NOTES];
 } kkey;
 
-static int kkey_open(struct inode * inode, struct file * filep) {
+static int kkey_open(struct inode * inode, struct file * filep)
+{
 	pr_info("open\n");
+
 	return 0;
 }
 
-static int kkey_close(struct inode * inode, struct file * filep) {
+static int kkey_close(struct inode * inode, struct file * filep)
+{
 	pr_info("close\n");
+
 	return 0;
 }
 
-static ssize_t kkey_read(struct file * filep, char * __user buf, size_t count, loff_t *fpos) {
+
+
+static ssize_t kkey_read(struct file * filep, char * __user buf, size_t count, loff_t *fpos)
+{
 	pr_info("read");
-	return 0;
+
+	return -EIO;
 }
 
-static ssize_t kkey_write(struct file * filep, const char * __user buf, size_t count, loff_t *fpos) {
+static ssize_t kkey_write(struct file * filep, const char * __user buf, size_t count, loff_t *fpos)
+{
 	pr_info("write");
-	return 0;
+
+	return -EIO;
 }
 
-static long kkey_ioctl(struct file * filep, unsigned int cmd, unsigned long arg) {
+static long kkey_ioctl(struct file * filep, unsigned int cmd, unsigned long arg)
+{
 	pr_info("ioctl");
+
 	return 0;
 }
 
-static loff_t kkey_llseek(struct file * filep, loff_t off, int whence) {
+static loff_t kkey_llseek(struct file * filep, loff_t off, int whence)
+{
 	pr_info("llseek");
+
 	return 0;
 }
 
@@ -116,7 +74,8 @@ struct file_operations kkey_fops = {
 };
 
 // entries in /dev belonging to class kkey should be RW to all users
-static char * kkey_devnode(const struct device *dev, umode_t * mode) {
+static char * kkey_devnode(const struct device *dev, umode_t * mode)
+{
 	if (mode) {
 		*mode = 0666;
 	}
@@ -124,7 +83,8 @@ static char * kkey_devnode(const struct device *dev, umode_t * mode) {
 	return NULL;
 }
 
-static int __init kkey_init(void) {
+static int __init kkey_init(void)
+{
 	int ret;
 	pr_info("init start");
 
@@ -154,9 +114,26 @@ static int __init kkey_init(void) {
 		goto err_cdev_add;
 	}
 
+	pr_info("added cdev\n");
+
+	int i;
+	for (i = 0; i < MIDI_NUM_NOTES; i++) {
+		struct device * dev_i = device_create(kkey.class, NULL, MKDEV(MAJOR(kkey.devnum), i), NULL, KKEY_NAME "%03d", i);
+		if (IS_ERR(dev_i)) {
+			ret = PTR_ERR(dev_i);
+			pr_err("failed to create kkey device %d: %s\n", i, errname(ret));
+			goto err_device_create;
+		}
+		kkey.devices[i] = dev_i;
+	}
+
+	pr_info("created %d kkey devices\n", MIDI_NUM_NOTES);
+
 	return 0;
-	//
-	//cdev_del(&kkey.cdev);
+
+err_device_create:
+	for (; i > 0; i--)
+		device_destroy(kkey.class, MKDEV(MAJOR(kkey.devnum), i-1));
 err_cdev_add:
 	class_destroy(kkey.class);
 err_class_create:
@@ -165,7 +142,10 @@ err_alloc_chrdev_region:
 	return ret;
 }
 
-static void kkey_exit(void) {
+static void kkey_exit(void)
+{
+	for (int i = 0; i < MIDI_NUM_NOTES; i++)
+		device_destroy(kkey.class, MKDEV(MAJOR(kkey.devnum), i));
 	cdev_del(&kkey.cdev);
 	class_destroy(kkey.class);
 	unregister_chrdev_region(kkey.devnum, MIDI_NUM_NOTES);
