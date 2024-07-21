@@ -1,0 +1,13 @@
+obj-m += kkey.o
+
+build:
+	make -C /lib/modules/$(shell uname -r)/build modules M=$(PWD)
+
+clean:
+	make -C /lib/modules/$(shell uname -r)/build clean M=$(PWD)
+
+load: build
+	sudo insmod kkey.ko
+
+unload:
+	sudo rmmod kkey
