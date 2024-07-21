@@ -4,6 +4,8 @@
 # 1 "/usr/include/stdc-predef.h" 1 3 4
 # 0 "<command-line>" 2
 # 1 "macro4.S"
+
+
 .macro macro_svc, number
  svc #\number
 

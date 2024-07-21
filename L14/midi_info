@@ -1,0 +1,18 @@
+4D 54 68 64 - "MThd" (MIDI header chunk identifier)
+00 00 00 06 - Header length (always 6 bytes)
+00 00       - Format type (0)
+00 01       - Number of tracks (1)
+00 60       - Time division (96 ticks per quarter note)
+
+4D 54 72 6B - "MTrk" (MIDI track chunk identifier)
+00 00 00 0B - Track length (11 bytes)
+00          - Delta time (0)
+90          - Note On event (channel 1)
+3C          - Note number (60, middle C)
+40          - Velocity (64)
+A0          - Delta time (160 ticks)
+80          - Note Off event (channel 1)
+3C          - Note number (60, middle C)
+40          - Velocity (64)
+00          - Delta time (0)
+FF 2F 00    - End of Track meta event

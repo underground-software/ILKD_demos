@@ -11,10 +11,8 @@
 
 .macro do_syscall, number
 do_syscall_\()\number:
-
  mov x8, #\number
  macro_svc 0
-
  ret
 .endm
 
