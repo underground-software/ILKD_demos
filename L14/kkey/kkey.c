@@ -4,11 +4,11 @@
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/slab.h>
+#include <linux/fs.h>
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
 #define MIDI_NUM_NOTES 128
-
 
 // TODO: NOTE: ALERT: MIDI FORMAT IS BIG ENDIAN
 
@@ -63,17 +63,57 @@ struct midifile {
 
 struct midinote {
 	u8 note;
-	struct cdev cdev;
 	struct device dev;
 };
 
 struct kkey {
 	dev_t devnum;
 	struct class * class;
+	struct cdev cdev;
 	struct midinote notes[MIDI_NUM_NOTES];
 	struct mutex lock;
 	struct midifile file;
 } kkey;
+
+static int kkey_open(struct inode * inode, struct file * filep) {
+	pr_info("open\n");
+	return 0;
+}
+
+static int kkey_close(struct inode * inode, struct file * filep) {
+	pr_info("close\n");
+	return 0;
+}
+
+static ssize_t kkey_read(struct file * filep, char * __user buf, size_t count, loff_t *fpos) {
+	pr_info("read");
+	return 0;
+}
+
+static ssize_t kkey_write(struct file * filep, const char * __user buf, size_t count, loff_t *fpos) {
+	pr_info("write");
+	return 0;
+}
+
+static long kkey_ioctl(struct file * filep, unsigned int cmd, unsigned long arg) {
+	pr_info("ioctl");
+	return 0;
+}
+
+static loff_t kkey_llseek(struct file * filep, loff_t off, int whence) {
+	pr_info("llseek");
+	return 0;
+}
+
+struct file_operations kkey_fops = {
+	.owner = THIS_MODULE,
+	.open = kkey_open,
+	.release = kkey_close,
+	.read = kkey_read,
+	.write = kkey_write,
+	.unlocked_ioctl = kkey_ioctl,
+	.llseek = kkey_llseek,
+};
 
 // entries in /dev belonging to class kkey should be RW to all users
 static char * kkey_devnode(const struct device *dev, umode_t * mode) {
@@ -107,8 +147,17 @@ static int __init kkey_init(void) {
 
 	kkey.class->devnode = kkey_devnode;
 
-	return 0;
+	cdev_init(&kkey.cdev, &kkey_fops);
 
+	if ((ret = cdev_add(&kkey.cdev, kkey.devnum, MIDI_NUM_NOTES))) {
+		pr_err("failed to add kkey cdev: %s\n", errname(ret));
+		goto err_cdev_add;
+	}
+
+	return 0;
+	//
+	//cdev_del(&kkey.cdev);
+err_cdev_add:
 	class_destroy(kkey.class);
 err_class_create:
 	unregister_chrdev_region(kkey.devnum, MIDI_NUM_NOTES);
@@ -117,10 +166,10 @@ err_alloc_chrdev_region:
 }
 
 static void kkey_exit(void) {
+	cdev_del(&kkey.cdev);
 	class_destroy(kkey.class);
 	unregister_chrdev_region(kkey.devnum, MIDI_NUM_NOTES);
-	pr_info("exit end");
-
+	pr_info("exit end\n");
 }
 
 module_init(kkey_init);
