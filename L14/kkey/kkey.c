@@ -120,8 +120,12 @@ static u8 midi_buf[sizeof(struct midi_header) + sizeof(struct midi_track_header)
 	(KKEY_MAX_DELTA_BYTES + sizeof(struct midi_note_event)) * KKEY_MAX_EVENTS +
 	KKEY_MAX_DELTA_BYTES + sizeof(struct midi_meta_event)];
 
-static size_t prepare_midi(void)
+static bool dirty = true;
+static size_t midi_size;
+
+static void prepare_midi(void)
 {
+	pr_info("prepare midi");
 	u8 * iter = midi_buf, *track_header_ptr, *data_ptr;
 	memcpy(iter, &midi_header, sizeof midi_header);
 
@@ -160,7 +164,9 @@ static size_t prepare_midi(void)
 	};
 	memcpy(track_header_ptr, &track_header, sizeof track_header);
 
-	return iter - midi_buf;
+	midi_size = iter - midi_buf;
+	dirty = false;
+	pr_info("cleaned, %zu bytes\n", midi_size);
 }
 
 
@@ -168,7 +174,17 @@ static ssize_t kkey_read(struct file * filep, char * __user buf, size_t count, l
 {
 	pr_info("read");
 
-	size_t midi_size = prepare_midi();
+	// cannot continue reading from middle of file after it's been invalidated
+	if (dirty) {
+		pr_info("read dirty\n");
+		if (*fpos) {
+			return -EIO;
+		} else {
+			prepare_midi();
+		}
+	} else {
+		pr_info("read clean\n");
+	}
 
 	// makes e.g. cat work by providing EOF
 	if (*fpos >= midi_size)
@@ -221,6 +237,7 @@ static ssize_t kkey_write(struct file * filep, const char * __user buf, size_t c
 		.off_on = input != '0',
 	};
 
+	dirty = true;
 	return count;
 }
 
@@ -228,16 +245,37 @@ static long kkey_ioctl(struct file * filep, unsigned int cmd, unsigned long arg)
 {
 	pr_info("ioctl");
 
-	
 
-	return -EINVAL;
+	// reset file
+	kkey.size = 0;
+	dirty = true;
+
+	return 0;
 }
 
 static loff_t kkey_llseek(struct file * filep, loff_t off, int whence)
 {
 	pr_info("llseek");
 
-	return -EINVAL;
+	if (dirty)
+		prepare_midi();
+
+	loff_t base;
+	switch (whence) {
+	case SEEK_CUR:
+		base = 0;
+		break;
+	case SEEK_SET:
+		base = filep->f_pos;
+		break;
+	case SEEK_END:
+		base = midi_size;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	return (filep->f_pos = base + off);
 }
 
 struct file_operations kkey_fops = {
