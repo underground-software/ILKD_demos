@@ -16,6 +16,9 @@
 // most significant bit always 0 since midi notes are all in 0-127 range
 #define MIDI_NUM_NOTES 128
 
+// incrase this value by x to slow down playback by a factory of x
+#define KKEY_SLOWDOWN 1
+
 const static struct __packed midi_header {
 	u8  header_label[4];
 	u32 header_size;
@@ -28,7 +31,7 @@ const static struct __packed midi_header {
 	.format_type = __cpu_to_be16(0), // 0 denotes a single track file
 	.num_tracks =  __cpu_to_be16(1), // must be 1 for format_type == 0
 	// we will use HZ so 1 jiffie = 1 midi tick at 4/4 time and 60 BPM
-	.ticks_per_quarter_note = __cpu_to_be16(HZ),
+	.ticks_per_quarter_note = __cpu_to_be16(HZ / KKEY_SLOWDOWN),
 };
 
 struct midi_track_header {
@@ -200,19 +203,6 @@ static ssize_t kkey_read(struct file * filep, char * __user buf, size_t count, l
 	return count;
 }
 
-/*
-start: 0 = release with velocity 63, 1 = press with velocity 63
-
-level 2:
-x = 0-127, press with velocity x
-(x = 0-127) + 0x80 (128-255), release with velocity x
-
-jiffies:
-	record jiffies value, on/off bool, note on each event
-	when reading: difference between jiffies maps to delta value
-
-*/
-
 static ssize_t kkey_write(struct file * filep, const char * __user buf, size_t count, loff_t *fpos)
 {
 	pr_info("write");
@@ -241,14 +231,21 @@ static ssize_t kkey_write(struct file * filep, const char * __user buf, size_t c
 	return count;
 }
 
+
+#define KKEY_IOC_RESET _IO(0x11, 0)
+
 static long kkey_ioctl(struct file * filep, unsigned int cmd, unsigned long arg)
 {
-	pr_info("ioctl");
+	pr_info("ioctl(%u, %lu)\n", cmd, arg);
 
-
-	// reset file
-	kkey.size = 0;
-	dirty = true;
+	switch (cmd) {
+	case KKEY_IOC_RESET:
+		kkey.size = 0;
+		dirty = true;
+		break;
+	default:
+		return -EINVAL;
+	}
 
 	return 0;
 }
