@@ -1,0 +1,6 @@
+rootfs
+busybox
+tinycc
+glibc
+a.out
+glibc-build

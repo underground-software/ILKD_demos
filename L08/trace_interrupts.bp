@@ -1,0 +1,11 @@
+#!/bin/bpftrace
+
+// Trace the entry of interrupt handlers
+tracepoint:irq:irq_handler_entry {
+    printf("Interrupt %d started\n%s\n", args->irq, kstack);
+}
+
+// Trace the exit of interrupt handlers
+tracepoint:irq:irq_handler_exit {
+    printf("Interrupt %d finished, result: %d\n", args->irq, args->ret);
+}

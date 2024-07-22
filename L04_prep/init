@@ -1,0 +1,11 @@
+#!/bin/ash
+
+# mount <device> <path> -t <filesystem type>
+
+mkdir /proc
+mount none /proc -t proc
+
+mkdir /sys
+mount none /sys -t sysfs
+
+exec ash

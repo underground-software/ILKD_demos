@@ -1,0 +1,11 @@
+tinycc
+busybox
+glibc
+bin
+sbin
+usr
+lib
+include
+lib64
+etc
+var
