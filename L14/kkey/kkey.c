@@ -16,9 +16,6 @@
 // most significant bit always 0 since midi notes are all in 0-127 range
 #define MIDI_NUM_NOTES 128
 
-// incrase this value by x to slow down playback by a factory of x
-#define KKEY_SLOWDOWN 10
-
 const static struct __packed midi_header {
 	u8  header_label[4];
 	u32 header_size;
@@ -31,14 +28,13 @@ const static struct __packed midi_header {
 	.format_type = __cpu_to_be16(0), // 0 denotes a single track file
 	.num_tracks =  __cpu_to_be16(1), // must be 1 for format_type == 0
 	// we will use HZ so 1 jiffie = 1 midi tick at 4/4 time and 60 BPM
-	.ticks_per_quarter_note = __cpu_to_be16(HZ / KKEY_SLOWDOWN),
+	.ticks_per_quarter_note = __cpu_to_be16(HZ),
 };
 
 struct midi_track_header {
 	u8 track_header_label[4];
 	u32 track_length;
 };
-
 
 struct midi_note_event {
 	u8 channel:4;
@@ -75,6 +71,43 @@ static struct kkey {
 	struct kkey_event events[KKEY_MAX_EVENTS];
 	size_t size;
 } kkey;
+
+static struct kkey_attrs {
+	u32 slowdown;
+	u8  velocity;
+} kkey_attrs = {
+	// increase this value by x to slow down playback by a factory of x
+	.slowdown = 10,
+	// arbitary constant value near midpoint for simplicity
+	.velocity = 63,
+};
+
+static struct class_attribute kkey_attr_velocity =
+    __ATTR(kkey_velocity, 0666, attr_velocity_show, attr_velocity_store);
+
+static struct class_attribute kkey_attr_slowdown =
+    __ATTR(kkey_slowdown, 0666, attr_slowdown_show, attr_slowdown_store);
+
+static ssize_t attr_velocity_show(struct class *class, struct class_attribute *attr, char *buf)
+{
+	
+}
+
+static ssize_t attr_velocity_store(struct class *class, struct class_attribute *attr, const char *buf, size_t count)
+{
+
+}
+
+static ssize_t attr_slowdown_show(struct class *class, struct class_attribute *attr, char *buf)
+{
+	
+}
+
+static ssize_t attr_slowdown_store(struct class *class, struct class_attribute *attr, const char *buf, size_t count)
+{
+
+}
+
 
 // big enough to fit any u64 delta value (7 * 10 >= 64)
 #define KKEY_MAX_DELTA_BYTES 10
@@ -151,8 +184,7 @@ static void prepare_midi(void)
 			// 8 or 9 to indicate off and on respectively
 			.cmd = 0x8 + kkey.events[i].off_on,
 			.note = (u8)kkey.events[i].note,
-			// arbitary constant value near midpoint for simplicity
-			.velocity = 63,
+			.velocity = kkey_attrs.velocity,
 		};
 		memcpy(iter, &event, sizeof event);
 		iter += sizeof event;
@@ -170,6 +202,12 @@ static void prepare_midi(void)
 
 	midi_size = iter - midi_buf;
 	dirty = false;
+
+	if (kkey_attrs.slowdown != 1) {
+		u16 new_ticks = cpu_to_be16(HZ / kkey_attrs.slowdown);
+		memcpy(track_header_ptr - sizeof(u16), &new_ticks, sizeof(u16));
+	}
+
 	pr_info("cleaned, %zu bytes\n", midi_size);
 }
 
@@ -341,8 +379,21 @@ static int __init kkey_init(void)
 
 	pr_info("created %d kkey devices\n", MIDI_NUM_NOTES);
 
+	if ((ret = class_create_file(kkey.class, &kkey_attr_velocity))) {
+		pr_err("failed to add velocity sysfs attr file: %s\n", errname(ret));
+		// same cleanup as partial failure of device create
+		goto err_device_create;
+	}
+
+	if ((ret = class_create_file(kkey.class, &kkey_attr_slowdown))) {
+		pr_err("failed to add slowdown sysfs attr file: %s\n", errname(ret));
+		goto err_sysfs_class_file_slowdown;
+	}
+
 	return 0;
 
+err_sysfs_class_file_slowdown:
+	class_remove_file(kkey.class, &kkey_attr_velocity);
 err_device_create:
 	for (; i > 0; i--)
 		device_destroy(kkey.class, MKDEV(MAJOR(kkey.devnum), i-1));
@@ -356,6 +407,8 @@ err_alloc_chrdev_region:
 
 static void kkey_exit(void)
 {
+	class_remove_file(kkey.class, &kkey_attr_slowdown);
+	class_remove_file(kkey.class, &kkey_attr_velocity);
 	for (int i = 0; i < MIDI_NUM_NOTES; i++)
 		device_destroy(kkey.class, MKDEV(MAJOR(kkey.devnum), i));
 	cdev_del(&kkey.cdev);
