@@ -1,13 +1,25 @@
 obj-m += kkey.o
 
+all: unload clean build load
+
 build:
 	make -C /lib/modules/$(shell uname -r)/build modules M=$(PWD)
 
 clean:
 	make -C /lib/modules/$(shell uname -r)/build clean M=$(PWD)
+	-rm reset
+	-rm kkey.mid
 
 load: build
 	sudo insmod kkey.ko
 
 unload:
-	sudo rmmod kkey
+	-sudo rmmod kkey
+
+play:
+	cat /dev/kkey000 > kkey.mid
+	timidity kkey.mid
+
+reset:
+	gcc reset.c -o reset
+	./reset

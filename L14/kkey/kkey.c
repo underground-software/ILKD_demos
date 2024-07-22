@@ -7,17 +7,17 @@
 #include <linux/fs.h>
 #include <linux/byteorder/generic.h>
 
-#undef pr_fmt // unusual
+// contains ioctl cmds provided to userspace
+#include "kkey.h"
+
+#undef 	pr_fmt // to remove redefinition warning 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-
-
-/* NOTE: midi file format is big endian */
 
 // most significant bit always 0 since midi notes are all in 0-127 range
 #define MIDI_NUM_NOTES 128
 
 // incrase this value by x to slow down playback by a factory of x
-#define KKEY_SLOWDOWN 1
+#define KKEY_SLOWDOWN 10
 
 const static struct __packed midi_header {
 	u8  header_label[4];
@@ -128,7 +128,7 @@ static size_t midi_size;
 
 static void prepare_midi(void)
 {
-	pr_info("prepare midi");
+	pr_info("prepare midi\n");
 	u8 * iter = midi_buf, *track_header_ptr, *data_ptr;
 	memcpy(iter, &midi_header, sizeof midi_header);
 
@@ -172,10 +172,9 @@ static void prepare_midi(void)
 	pr_info("cleaned, %zu bytes\n", midi_size);
 }
 
-
 static ssize_t kkey_read(struct file * filep, char * __user buf, size_t count, loff_t *fpos)
 {
-	pr_info("read");
+	pr_info("read\n");
 
 	// cannot continue reading from middle of file after it's been invalidated
 	if (dirty) {
@@ -186,7 +185,7 @@ static ssize_t kkey_read(struct file * filep, char * __user buf, size_t count, l
 			prepare_midi();
 		}
 	} else {
-		pr_info("read clean\n");
+		pr_info("read cached\n");
 	}
 
 	// makes e.g. cat work by providing EOF
@@ -205,7 +204,7 @@ static ssize_t kkey_read(struct file * filep, char * __user buf, size_t count, l
 
 static ssize_t kkey_write(struct file * filep, const char * __user buf, size_t count, loff_t *fpos)
 {
-	pr_info("write");
+	pr_info("write\n");
 
 	if (kkey.size >= KKEY_MAX_EVENTS) {
 		pr_err("write: too many events (%zu)\n", kkey.size);
@@ -228,11 +227,10 @@ static ssize_t kkey_write(struct file * filep, const char * __user buf, size_t c
 	};
 
 	dirty = true;
+	
 	return count;
 }
 
-
-#define KKEY_IOC_RESET _IO(0x11, 0)
 
 static long kkey_ioctl(struct file * filep, unsigned int cmd, unsigned long arg)
 {
@@ -242,6 +240,7 @@ static long kkey_ioctl(struct file * filep, unsigned int cmd, unsigned long arg)
 	case KKEY_IOC_RESET:
 		kkey.size = 0;
 		dirty = true;
+		pr_info("reset file\n");
 		break;
 	default:
 		return -EINVAL;
@@ -252,7 +251,7 @@ static long kkey_ioctl(struct file * filep, unsigned int cmd, unsigned long arg)
 
 static loff_t kkey_llseek(struct file * filep, loff_t off, int whence)
 {
-	pr_info("llseek");
+	pr_info("llseek\n");
 
 	if (dirty)
 		prepare_midi();
@@ -298,10 +297,10 @@ static char * kkey_devnode(const struct device *dev, umode_t * mode)
 static int __init kkey_init(void)
 {
 	int ret;
-	pr_info("init start");
+	pr_info("init start\n");
 
 	if ((ret = alloc_chrdev_region(&kkey.devnum, 0, MIDI_NUM_NOTES, KKEY_NAME))) {
-		pr_err("failed to allocate chrdev major/minor region: %s", errname(ret));
+		pr_err("failed to allocate chrdev major/minor region: %s\n", errname(ret));
 		goto err_alloc_chrdev_region;
 	}
 
