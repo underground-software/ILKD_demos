@@ -1,5 +1,7 @@
 obj-m += kkey.o
 
+.PHONY: all build clean load unload play reset
+
 all: unload clean build load
 
 build:
