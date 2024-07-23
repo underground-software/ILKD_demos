@@ -6,6 +6,7 @@ all: unload clean build load
 
 build:
 	make -C /lib/modules/$(shell uname -r)/build modules M=$(PWD)
+	gcc reset.c -o reset
 
 clean:
 	make -C /lib/modules/$(shell uname -r)/build clean M=$(PWD)
