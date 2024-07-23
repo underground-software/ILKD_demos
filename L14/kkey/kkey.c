@@ -158,6 +158,7 @@ static void prepare_midi(void)
 		iter += sizeof event;
 	}
 
+	iter += write_delta(0, iter);
 	memcpy(iter, &event_end_of_track, sizeof event_end_of_track);
 	iter += sizeof event_end_of_track;
 
