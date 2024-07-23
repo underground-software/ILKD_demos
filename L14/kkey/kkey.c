@@ -16,6 +16,8 @@
 // most significant bit always 0 since midi notes are all in 0-127 range
 #define MIDI_NUM_NOTES 128
 
+#define MIDI_MAX_VELOCITY 127
+
 const static struct __packed midi_header {
 	u8  header_label[4];
 	u32 header_size;
@@ -53,7 +55,7 @@ const static struct midi_meta_event {
 	.data = 0,		// always 0
 };
 
-#define KKEY_MAX_EVENTS (1UL << 12) // 4096
+#define KKEY_MAX_EVENTS (1UL << 14) // 16384
 
 #define KKEY_NAME "kkey"
 
@@ -72,41 +74,80 @@ static struct kkey {
 	size_t size;
 } kkey;
 
+static bool dirty = true;
+
 static struct kkey_attrs {
 	u32 slowdown;
 	u8  velocity;
 } kkey_attrs = {
-	// increase this value by x to slow down playback by a factory of x
+	// increase this value by x to slow down playback by a factor of x
 	.slowdown = 10,
 	// arbitary constant value near midpoint for simplicity
 	.velocity = 63,
 };
 
-static struct class_attribute kkey_attr_velocity =
-    __ATTR(kkey_velocity, 0666, attr_velocity_show, attr_velocity_store);
-
-static struct class_attribute kkey_attr_slowdown =
-    __ATTR(kkey_slowdown, 0666, attr_slowdown_show, attr_slowdown_store);
-
-static ssize_t attr_velocity_show(struct class *class, struct class_attribute *attr, char *buf)
+static ssize_t attr_velocity_show(const struct class *class, const struct class_attribute *attr, char *buf)
 {
-	
+	return sysfs_emit(buf, "%hhu\n", kkey_attrs.velocity);
 }
 
-static ssize_t attr_velocity_store(struct class *class, struct class_attribute *attr, const char *buf, size_t count)
+static ssize_t attr_velocity_store(const struct class *class, const struct class_attribute *attr, const char *buf, size_t count)
 {
+	char kbuf[16];
+	if (count >= sizeof(kbuf))
+		return -EINVAL;
 
+	memcpy(kbuf, buf, count);
+	kbuf[count] = '\0';
+
+	u8 velocity;
+	if (kstrtou8(kbuf, 10, &velocity) || velocity > MIDI_MAX_VELOCITY)
+		return -EINVAL;
+
+	kkey_attrs.velocity = velocity;
+
+	dirty = true;
+	return count;
 }
 
-static ssize_t attr_slowdown_show(struct class *class, struct class_attribute *attr, char *buf)
+static ssize_t attr_slowdown_show(const struct class *class, const struct class_attribute *attr, char *buf)
 {
-	
+	return sysfs_emit(buf, "%u\n", kkey_attrs.slowdown);
 }
 
-static ssize_t attr_slowdown_store(struct class *class, struct class_attribute *attr, const char *buf, size_t count)
+static ssize_t attr_slowdown_store(const struct class *class, const struct class_attribute *attr, const char *buf, size_t count)
 {
 
+	char kbuf[16];
+	if (count >= sizeof(kbuf))
+		return -EINVAL;
+
+	memcpy(kbuf, buf, count);
+	kbuf[count] = '\0';
+
+	u32 slowdown;
+	if (kstrtou32(kbuf, 10, &slowdown) || slowdown == 0)
+		return -EINVAL;
+
+	kkey_attrs.slowdown = slowdown;
+
+	dirty = true;
+	return count;
 }
+
+static struct class_attribute kkey_attr_velocity = {
+	.attr.name = "kkey_velocity",
+	.attr.mode = 0666,
+	.show = attr_velocity_show,
+	.store = attr_velocity_store,
+};
+
+static struct class_attribute kkey_attr_slowdown = {
+	.attr.name = "kkey_slowdown",
+	.attr.mode = 0666,
+	.show = attr_slowdown_show,
+	.store = attr_slowdown_store,
+};
 
 
 // big enough to fit any u64 delta value (7 * 10 >= 64)
@@ -136,8 +177,6 @@ static size_t write_delta(u64 delta, u8 * dest)
 
 static int kkey_open(struct inode * inode, struct file * filep)
 {
-	pr_info("open\n");
-
 	unsigned note = iminor(inode);
 
 	filep->private_data = (void *)(uintptr_t)note;
@@ -147,8 +186,6 @@ static int kkey_open(struct inode * inode, struct file * filep)
 
 static int kkey_close(struct inode * inode, struct file * filep)
 {
-	pr_info("close\n");
-
 	return 0;
 }
 
@@ -156,12 +193,10 @@ static u8 midi_buf[sizeof(struct midi_header) + sizeof(struct midi_track_header)
 	(KKEY_MAX_DELTA_BYTES + sizeof(struct midi_note_event)) * KKEY_MAX_EVENTS +
 	KKEY_MAX_DELTA_BYTES + sizeof(struct midi_meta_event)];
 
-static bool dirty = true;
 static size_t midi_size;
 
 static void prepare_midi(void)
 {
-	pr_info("prepare midi\n");
 	u8 * iter = midi_buf, *track_header_ptr, *data_ptr;
 	memcpy(iter, &midi_header, sizeof midi_header);
 
@@ -207,24 +242,16 @@ static void prepare_midi(void)
 		u16 new_ticks = cpu_to_be16(HZ / kkey_attrs.slowdown);
 		memcpy(track_header_ptr - sizeof(u16), &new_ticks, sizeof(u16));
 	}
-
-	pr_info("cleaned, %zu bytes\n", midi_size);
 }
 
 static ssize_t kkey_read(struct file * filep, char * __user buf, size_t count, loff_t *fpos)
 {
-	pr_info("read\n");
-
 	// cannot continue reading from middle of file after it's been invalidated
 	if (dirty) {
-		pr_info("read dirty\n");
-		if (*fpos) {
+		if (*fpos)
 			return -EIO;
-		} else {
+		else
 			prepare_midi();
-		}
-	} else {
-		pr_info("read cached\n");
 	}
 
 	// makes e.g. cat work by providing EOF
@@ -243,8 +270,6 @@ static ssize_t kkey_read(struct file * filep, char * __user buf, size_t count, l
 
 static ssize_t kkey_write(struct file * filep, const char * __user buf, size_t count, loff_t *fpos)
 {
-	pr_info("write\n");
-
 	if (kkey.size >= KKEY_MAX_EVENTS) {
 		pr_err("write: too many events (%zu)\n", kkey.size);
 		return -ENOSPC;
@@ -259,11 +284,13 @@ static ssize_t kkey_write(struct file * filep, const char * __user buf, size_t c
 		return -EFAULT;
 	}
 
-	kkey.events[kkey.size++] = (struct kkey_event){
+	kkey.events[kkey.size] = (struct kkey_event){
 		.timestamp = get_jiffies_64(),
 		.note = (unsigned)(uintptr_t)filep->private_data,
 		.off_on = input != '0',
 	};
+
+	kkey.size++;
 
 	dirty = true;
 	
@@ -273,13 +300,10 @@ static ssize_t kkey_write(struct file * filep, const char * __user buf, size_t c
 
 static long kkey_ioctl(struct file * filep, unsigned int cmd, unsigned long arg)
 {
-	pr_info("ioctl(%u, %lu)\n", cmd, arg);
-
 	switch (cmd) {
 	case KKEY_IOC_RESET:
 		kkey.size = 0;
 		dirty = true;
-		pr_info("reset file\n");
 		break;
 	default:
 		return -EINVAL;
@@ -290,8 +314,6 @@ static long kkey_ioctl(struct file * filep, unsigned int cmd, unsigned long arg)
 
 static loff_t kkey_llseek(struct file * filep, loff_t off, int whence)
 {
-	pr_info("llseek\n");
-
 	if (dirty)
 		prepare_midi();
 
@@ -336,15 +358,11 @@ static char * kkey_devnode(const struct device *dev, umode_t * mode)
 static int __init kkey_init(void)
 {
 	int ret;
-	pr_info("init start\n");
 
 	if ((ret = alloc_chrdev_region(&kkey.devnum, 0, MIDI_NUM_NOTES, KKEY_NAME))) {
 		pr_err("failed to allocate chrdev major/minor region: %s\n", errname(ret));
 		goto err_alloc_chrdev_region;
 	}
-
-	char buf[64];
-	pr_info("allocated major:minor = %s through minor %d\n", format_dev_t(buf, kkey.devnum), MIDI_NUM_NOTES);
 
 	kkey.class = class_create(KKEY_NAME);
 	if (IS_ERR(kkey.class)) {
@@ -352,8 +370,6 @@ static int __init kkey_init(void)
 		pr_err("failed to create device class: %s\n", errname(ret));
 		goto err_class_create;
 	}
-
-	pr_info("class '%s' created\n", KKEY_NAME);
 
 	kkey.class->devnode = kkey_devnode;
 
@@ -363,8 +379,6 @@ static int __init kkey_init(void)
 		pr_err("failed to add kkey cdev: %s\n", errname(ret));
 		goto err_cdev_add;
 	}
-
-	pr_info("added cdev\n");
 
 	int i;
 	for (i = 0; i < MIDI_NUM_NOTES; i++) {
@@ -376,8 +390,6 @@ static int __init kkey_init(void)
 		}
 		kkey.devices[i] = dev_i;
 	}
-
-	pr_info("created %d kkey devices\n", MIDI_NUM_NOTES);
 
 	if ((ret = class_create_file(kkey.class, &kkey_attr_velocity))) {
 		pr_err("failed to add velocity sysfs attr file: %s\n", errname(ret));
@@ -414,7 +426,6 @@ static void kkey_exit(void)
 	cdev_del(&kkey.cdev);
 	class_destroy(kkey.class);
 	unregister_chrdev_region(kkey.devnum, MIDI_NUM_NOTES);
-	pr_info("exit end\n");
 }
 
 module_init(kkey_init);
