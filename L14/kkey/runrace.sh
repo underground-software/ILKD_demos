@@ -1,22 +1,28 @@
 #!/bin/sh
 
 trap 'echo "$count attempts at race"' EXIT
+
 count=0
-while true; do
+while test $count -lt 100; do
+count=$((count + 1))
 
 ./reset
 ./examples/race
-cat /dev/kkey000 > race.mid
+cat /dev/kkey000 > kkey.mid
 
-OFFS=$(midicsvpy race.mid /dev/stdout | grep -c off)
-ONS=$(midicsvpy race.mid /dev/stdout | grep -c on)
+# from: pip install py_midicsv
+OFFS=$(midicsvpy kkey.mid /dev/stdout | grep -c off)
+ONS=$(midicsvpy kkey.mid /dev/stdout | grep -c on)
 
-# if [ "$OFFS" != "3840" -o "$ONS" != "3840" ]; then
 if [ "$OFFS" != "128" -o "$ONS" != "128" ]; then
-	break
+	echo "**********************************"
+	echo "**********************************"
+	echo "Race detected: offs: $OFFS ons: $ONS"
+	echo "**********************************"
+	echo "**********************************"
+	exit
 fi
 
-count=$((count + 1))
 done
 
-echo "Race detected: offs $OFFS ons $ONS"
+echo "[NO RACE DETECTED]"

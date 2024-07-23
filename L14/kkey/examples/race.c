@@ -37,16 +37,13 @@ int main(void)
 	if(0 > (pid = fork()))
 		err(1, "unable to create child");
 	pin_to_cpu(!pid);
-	//parent toggles all even keys, child toggles all odd keys
-	for(size_t j = 0; j < 15; ++j)
+	for(size_t i = !pid; i < NUM_KEYS; i += 2)
 	{
-		for(size_t i = !pid; i < NUM_KEYS; i += 2)
-		{
-			if(1 != write(fds[i], "1", 1))
-				err(1, "failed to write");
-			if(1 != write(fds[i], "0", 1))
-				err(1, "failed to write");
-		}
+		if(1 != write(fds[i], "1", 1))
+			err(1, "failed to write");
+		usleep(100);
+		if(1 != write(fds[i], "0", 1))
+			err(1, "failed to write");
 	}
 	if (pid)
 		waitpid(pid, NULL, 0);
