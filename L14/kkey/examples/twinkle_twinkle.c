@@ -184,6 +184,13 @@ int main(void){
     write(kkey[60], "1", 1);
     usleep(24000);
     write(kkey[60], "0", 1);
+
+    for(int i=0; i<128; ++i){
+
+        close(kkey[i]);
+
+    }
+
     return 0;
 }
 
